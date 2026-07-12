@@ -1,0 +1,22 @@
+# Virtual env
+.venv/
+.venv312/
+shopfast-venv/
+
+# Secrets
+.env
+
+# SQLite database
+data/
+
+# IDE
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# UV
+uv.lock

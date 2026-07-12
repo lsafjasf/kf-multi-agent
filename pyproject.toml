@@ -1,0 +1,21 @@
+[project]
+name = "shopfast-customer-service"
+version = "0.1.0"
+description = "LangGraph multi-agent e-commerce customer service system"
+requires-python = ">=3.12"
+dependencies = [
+    "langgraph>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "aiosqlite>=0.20.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
