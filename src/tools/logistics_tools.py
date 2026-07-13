@@ -134,6 +134,7 @@ async def report_lost_package(tracking_number: Annotated[str, "Tracking number o
         "UPDATE shipments SET status = 'lost_investigation', last_update = ? WHERE tracking_number = ?",
         (datetime.now(timezone.utc).isoformat(), tracking_number),
     )
+    await db.commit()
     return json.dumps({
         "success": True,
         "message": f"Lost package investigation opened for '{tracking_number}' "

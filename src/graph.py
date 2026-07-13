@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.checkpoint.memory import MemorySaver
 
 from src.state import CustomerServiceState
 from src.config import Config
@@ -100,4 +101,4 @@ async def build_customer_service_graph(
     # Human agent always goes to END after creating a ticket
     builder.add_edge("human_agent", END)
 
-    return builder.compile()
+    return builder.compile(checkpointer=MemorySaver())

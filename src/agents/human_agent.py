@@ -67,6 +67,7 @@ async def human_agent_node(state: CustomerServiceState) -> dict:
             now,
         ),
     )
+    await _db.commit()
 
     message = (
         f"📋 **Support Ticket Created**\n\n"

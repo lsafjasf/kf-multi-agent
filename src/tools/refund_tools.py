@@ -80,6 +80,8 @@ async def check_refund_eligibility(order_id: Annotated[str, "The order ID to che
             })
 
         delivered_at = datetime.fromisoformat(delivered_at_str)
+        if delivered_at.tzinfo is None:
+            delivered_at = delivered_at.replace(tzinfo=timezone.utc)
         days_since = (datetime.now(timezone.utc) - delivered_at).days
 
         if days_since > 30:
@@ -133,16 +135,16 @@ async def process_refund(
     refund_id = f"REF-{uuid.uuid4().hex[:6].upper()}"
     now = datetime.now(timezone.utc).isoformat()
 
-    await db.execute(
-        """INSERT INTO refunds (id, order_id, customer_id, amount, reason, status, created_at)
-           VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
-        (refund_id, order_id, order["customer_id"], order["total_amount"], reason, now),
-    )
-
-    await db.execute(
-        "UPDATE orders SET status = 'refunded' WHERE id = ?",
-        (order_id,),
-    )
+    async with db.transaction():
+        await db.execute(
+            """INSERT INTO refunds (id, order_id, customer_id, amount, reason, status, created_at)
+               VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
+            (refund_id, order_id, order["customer_id"], order["total_amount"], reason, now),
+        )
+        await db.execute(
+            "UPDATE orders SET status = 'refunded' WHERE id = ?",
+            (order_id,),
+        )
 
     return json.dumps({
         "success": True,

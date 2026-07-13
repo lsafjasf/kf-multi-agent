@@ -83,7 +83,6 @@ async def run_interactive(graph) -> None:
     print("=" * 60)
 
     config = {"configurable": {"thread_id": "cli-session"}}
-    state_snapshot = None
 
     while True:
         try:
@@ -98,18 +97,13 @@ async def run_interactive(graph) -> None:
 
         if user_input.lower() == "reset":
             config = {"configurable": {"thread_id": f"cli-{os.urandom(4).hex()}"}}
-            state_snapshot = None
             print("[Reset] Session reset.")
             continue
 
         if not user_input:
             continue
 
-        # Build input state — carry over user context from previous turns
         input_state = {"messages": [HumanMessage(content=user_input)]}
-        if state_snapshot:
-            input_state["user_id"] = state_snapshot.get("user_id")
-            input_state["order_id"] = state_snapshot.get("order_id")
 
         print(f"\n... Processing...", end="\r")
 
@@ -130,9 +124,9 @@ async def run_interactive(graph) -> None:
                     elif hasattr(msg, "name") and msg.name and "transfer" in str(msg.name):
                         print(f"  [Reset] {msg.content[:120]}")
 
-        # Get final state
-        result = await graph.ainvoke(input_state, config=config)
-        state_snapshot = result
+        # Read final state from checkpointer (no re-execution)
+        final = await graph.aget_state(config)
+        result = final.values if final else {}
 
         # Print the last AI message
         final_msgs = [m for m in result.get("messages", []) if hasattr(m, "content") and m.type == "ai"]

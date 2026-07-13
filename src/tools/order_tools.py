@@ -94,6 +94,7 @@ async def cancel_order(order_id: Annotated[str, "The order ID to cancel, e.g. 'O
         "UPDATE orders SET status = 'cancelled' WHERE id = ?",
         (order_id,),
     )
+    await db.commit()
     return json.dumps({
         "success": True,
         "message": f"Order '{order_id}' has been cancelled.",
