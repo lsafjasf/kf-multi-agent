@@ -63,4 +63,36 @@ CREATE TABLE IF NOT EXISTS support_tickets (
                         CHECK(status IN ('open','assigned','resolved')),
     created_at          TEXT NOT NULL
 );
+
+-- ── Memory: L2b historical session summaries ─────────────────
+CREATE TABLE IF NOT EXISTS conversation_sessions (
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL,
+    summary       TEXT NOT NULL,
+    key_entities  TEXT NOT NULL DEFAULT '[]',
+    resolution    TEXT NOT NULL CHECK(resolution IN (
+                      'resolved','escalated','abandoned'
+                  )),
+    ticket_id     TEXT,
+    message_count INTEGER NOT NULL DEFAULT 0,
+    duration_ms   INTEGER,
+    weight        REAL NOT NULL DEFAULT 1.0,
+    archived      INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL
+);
+
+-- ── Memory: L3 user long-term profiles ───────────────────────
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id             TEXT PRIMARY KEY,
+    preferences         TEXT NOT NULL DEFAULT '{}',
+    common_issues       TEXT NOT NULL DEFAULT '[]',
+    total_sessions      INTEGER NOT NULL DEFAULT 0,
+    total_resolved      INTEGER NOT NULL DEFAULT 0,
+    total_escalated     INTEGER NOT NULL DEFAULT 0,
+    favorite_agent      TEXT,
+    sentiment_trend     TEXT DEFAULT 'neutral',
+    last_session_at     TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
 """

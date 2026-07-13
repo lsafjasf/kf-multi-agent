@@ -3,12 +3,19 @@
 Uses a prompt-based approach (compatible with all LLMs including DeepSeek)
 instead of ``with_structured_output`` which requires JSON schema support
 not available on all providers.
+
+Memory integration (L2/L3):
+- On first activation for a session, loads L2b (historical session summaries)
+  and L3 (user profile) from the DB and injects them into the system prompt.
+- On every activation, updates L2a (running summary) in state.
+- Specialist sub-agents NEVER see L2/L3 — only the Supervisor does.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from typing import TYPE_CHECKING
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -16,8 +23,11 @@ from langgraph.types import Command
 
 from src.state import AgentName, CustomerServiceState
 
+if TYPE_CHECKING:
+    from src.memory.consolidator import MemoryConsolidator
 
-SUPERVISOR_SYSTEM_PROMPT = """\
+
+SUPERVISOR_BASE_PROMPT = """\
 You are the INTAKE ROUTER for ShopFast, a large e-commerce platform.
 
 Your job: read the customer's message and output a JSON routing decision.
@@ -67,22 +77,43 @@ def _parse_routing_response(text: str) -> tuple[AgentName, str]:
     return "order_agent", "Keyword fallback: default to order"
 
 
-def build_supervisor_node(model: BaseChatModel):
-    """Build the supervisor routing node."""
+def build_supervisor_node(
+    model: BaseChatModel,
+    consolidator: "MemoryConsolidator",
+):
+    """Build the supervisor routing node with memory injection.
+
+    The consolidator is used for:
+    - Loading L2b + L3 memory context at session start
+    - Updating L2a running summary on each activation
+    """
 
     async def supervisor_node(state: CustomerServiceState) -> Command:
         """Route the customer's latest message to the best specialist."""
 
-        # Get the latest user message
+        # ── Memory: load L2b + L3 context on first activation ─────
+        memory_context = state.memory_context
+        if not memory_context and state.user_id:
+            memory_context = await consolidator.build_memory_context(state.user_id)
+
+        # ── Memory: L2a — update running summary ──────────────────
+        running_summary = await consolidator.update_running_summary(state)
+
+        # ── Get the latest user message ────────────────────────────
         user_messages = [
             m for m in state.messages
             if hasattr(m, "type") and m.type == "human"
         ]
         latest_user = user_messages[-1].content if user_messages else ""
 
-        # Build the classification prompt
+        # ── Build the classification prompt ────────────────────────
+        # Prepend memory context (L2b + L3) — ONLY the Supervisor sees this
+        system_content = SUPERVISOR_BASE_PROMPT
+        if memory_context:
+            system_content = memory_context + "\n\n" + SUPERVISOR_BASE_PROMPT
+
         classification_messages = [
-            SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT),
+            SystemMessage(content=system_content),
             HumanMessage(content=f"Customer message: {latest_user}"),
         ]
 
@@ -97,6 +128,8 @@ def build_supervisor_node(model: BaseChatModel):
                 "active_agent": goto,
                 "next_agent": None,
                 "retry_count": 0,
+                "running_summary": running_summary,
+                "memory_context": memory_context,
             },
         )
 

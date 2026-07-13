@@ -71,6 +71,29 @@ class CustomerServiceState(BaseModel):
         description="Generated ticket ID when escalated to human.",
     )
 
+    # ── Memory (L2a / context) ───────────────────────────────
+    # NOTE: L1 is managed by the checkpointer (AsyncSqliteSaver);
+    #       L2b and L3 are persisted in SQLite and only injected
+    #       into the Supervisor prompt — they are NOT stored here.
+    session_id: str = Field(
+        default="",
+        description="Unique ID for the current conversation session.",
+    )
+    running_summary: str = Field(
+        default="",
+        description="L2a: running summary accumulated by the Supervisor "
+        "during the session.  Ephemeral — dies with the session.",
+    )
+    memory_context: str = Field(
+        default="",
+        description="L2b + L3 formatted text injected into Supervisor's "
+        "system prompt.  Loaded once at session start.",
+    )
+    session_started_at: float = Field(
+        default=0.0,
+        description="time.perf_counter() at session start for duration calc.",
+    )
+
     # ── Resolution ────────────────────────────────────────────
     resolved: bool = Field(
         default=False,

@@ -63,6 +63,8 @@ class EvalRunner:
         input_state = {
             "messages": [HumanMessage(content=scenario.message)],
             "user_id": scenario.user_id,
+            "session_id": f"eval-sess-{uuid.uuid4().hex[:12]}",
+            "session_started_at": time.perf_counter(),
         }
 
         t_start = time.perf_counter()

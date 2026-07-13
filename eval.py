@@ -87,6 +87,8 @@ async def run_eval(
         await db.execute("DELETE FROM shipments")
         await db.execute("DELETE FROM orders")
         await db.execute("DELETE FROM customers")
+        await db.execute("DELETE FROM conversation_sessions")
+        await db.execute("DELETE FROM user_profiles")
         await db.commit()
         # Now seed fresh
         await seed_database(db)
@@ -95,7 +97,9 @@ async def run_eval(
         # -- Graph -------------------------------------------------------
         print(f"[Model] {config.model_name}")
         print(f"[Eval] Running {len(scenarios)} scenario(s)...\n")
-        graph = await build_customer_service_graph(model, db)
+        graph, ckpt_conn = await build_customer_service_graph(
+            model, db, config.checkpoint_db_path,
+        )
         runner = EvalRunner(graph, db)
 
         t_start = time.perf_counter()
@@ -110,6 +114,10 @@ async def run_eval(
             results = await judge.evaluate_all(results)
 
         total_time = time.perf_counter() - t_start
+
+        # Close checkpoint connection
+        if ckpt_conn:
+            await ckpt_conn.close()
 
         # -- Output -----------------------------------------------------
         if json_output:

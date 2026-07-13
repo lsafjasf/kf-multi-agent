@@ -25,6 +25,15 @@ class Config:
     # ── Escalation ────────────────────────────────────────────────
     max_retries: int = int(os.getenv("MAX_RETRIES", "3"))
 
+    # ── Memory ────────────────────────────────────────────────────
+    checkpoint_db_path: Path = field(
+        default_factory=lambda: Path(os.getenv("CHECKPOINT_DB_PATH", "data/checkpoints.db"))
+    )
+    memory_max_recent_sessions: int = int(os.getenv("MEMORY_MAX_RECENT_SESSIONS", "5"))
+    memory_decay_days_warn: int = 30
+    memory_decay_days_low: int = 60
+    memory_decay_days_archive: int = 90
+
     # ── Mock API ──────────────────────────────────────────────────
     mock_api_failure_rate: float = float(os.getenv("MOCK_API_FAILURE_RATE", "0.0"))
 

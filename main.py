@@ -19,6 +19,8 @@ import asyncio
 import argparse
 import os
 import sys
+import time
+import uuid
 
 import sys
 import io
@@ -103,7 +105,11 @@ async def run_interactive(graph) -> None:
         if not user_input:
             continue
 
-        input_state = {"messages": [HumanMessage(content=user_input)]}
+        input_state = {
+            "messages": [HumanMessage(content=user_input)],
+            "session_id": f"sess-{uuid.uuid4().hex[:12]}",
+            "session_started_at": time.perf_counter(),
+        }
 
         print(f"\n... Processing...", end="\r")
 
@@ -161,6 +167,8 @@ async def run_demo(graph) -> None:
         input_state = {
             "messages": [HumanMessage(content=scenario["message"])],
             "user_id": scenario["user"],
+            "session_id": f"demo-sess-{uuid.uuid4().hex[:12]}",
+            "session_started_at": time.perf_counter(),
         }
 
         print(f"... Processing...", end="\r")
@@ -249,7 +257,9 @@ async def main() -> None:
 
         # -- Build Graph -------------------------------------------
         print("[Graph] Building agent graph...")
-        graph = await build_customer_service_graph(model, db)
+        graph, _ = await build_customer_service_graph(
+            model, db, config.checkpoint_db_path,
+        )
         print("   supervisor -> order_agent / logistics_agent / refund_agent / human_agent")
 
         # -- Run ---------------------------------------------------
