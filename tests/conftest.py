@@ -90,4 +90,5 @@ def model():
 @pytest_asyncio.fixture
 async def graph(model, db):
     """Compiled customer-service graph with temp DB and model."""
-    return await build_customer_service_graph(model, db)
+    g, _ckpt = await build_customer_service_graph(model, db)
+    return g

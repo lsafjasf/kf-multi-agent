@@ -1,8 +1,8 @@
 """Supervisor / Intent Router — classifies user requests and routes to specialists.
 
-Uses a prompt-based approach (compatible with all LLMs including DeepSeek)
-instead of ``with_structured_output`` which requires JSON schema support
-not available on all providers.
+Uses structured output (``with_structured_output``) as the primary mechanism,
+with a regex-based fallback for providers that don't support JSON schema
+(e.g., DeepSeek).
 
 Memory integration (L2/L3):
 - On first activation for a session, loads L2b (historical session summaries)
@@ -20,11 +20,23 @@ from typing import TYPE_CHECKING
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.types import Command
+from pydantic import BaseModel, Field
 
+from src.logging import get_logger
+from src.retry import with_retries
 from src.state import AgentName, CustomerServiceState
 
 if TYPE_CHECKING:
     from src.memory.consolidator import MemoryConsolidator
+
+logger = get_logger("supervisor")
+
+
+# ── Structured output schema ────────────────────────────────────────
+class RoutingDecision(BaseModel):
+    """Structured routing output for the supervisor."""
+    next: AgentName = Field(description="The agent to route to.")
+    reasoning: str = Field(default="", description="One sentence explaining the routing decision.")
 
 
 SUPERVISOR_BASE_PROMPT = """\
@@ -53,8 +65,11 @@ Reply with EXACTLY this JSON and nothing else:
 
 
 def _parse_routing_response(text: str) -> tuple[AgentName, str]:
-    """Parse the LLM's routing JSON from its response text."""
-    # Try to extract JSON from the response
+    """Parse the LLM's routing JSON from its response text (fallback parser).
+
+    Handles cases where the model wraps JSON in markdown or adds extra text.
+    """
+    # Try to extract JSON from the response — match the first {...} with "next"
     json_match = re.search(r'\{[^{}]*"next"\s*:\s*"[^"]*"[^{}]*\}', text, re.DOTALL)
     if json_match:
         try:
@@ -88,6 +103,17 @@ def build_supervisor_node(
     - Updating L2a running summary on each activation
     """
 
+    # Try to wrap the model with structured output; fall back to regex parser.
+    try:
+        structured_model = model.with_structured_output(RoutingDecision, method="json_mode")
+        logger.debug("Supervisor using structured output (json_mode)")
+    except Exception:
+        structured_model = None
+        logger.debug("Structured output unavailable — falling back to regex parser")
+
+    # Retry-wrapped fallback invoke (used when structured output fails)
+    _ainvoke_with_retry = with_retries(max_attempts=2)(model.ainvoke)
+
     async def supervisor_node(state: CustomerServiceState) -> Command:
         """Route the customer's latest message to the best specialist."""
 
@@ -107,7 +133,6 @@ def build_supervisor_node(
         latest_user = user_messages[-1].content if user_messages else ""
 
         # ── Build the classification prompt ────────────────────────
-        # Prepend memory context (L2b + L3) — ONLY the Supervisor sees this
         system_content = SUPERVISOR_BASE_PROMPT
         if memory_context:
             system_content = memory_context + "\n\n" + SUPERVISOR_BASE_PROMPT
@@ -117,10 +142,25 @@ def build_supervisor_node(
             HumanMessage(content=f"Customer message: {latest_user}"),
         ]
 
-        response = await model.ainvoke(classification_messages)
-        response_text = str(response.content) if hasattr(response, "content") else str(response)
+        # ── Primary: structured output ───────────────────────────
+        if structured_model is not None:
+            try:
+                decision: RoutingDecision = await structured_model.ainvoke(
+                    classification_messages
+                )
+                goto = decision.next
+                reasoning = decision.reasoning
+            except Exception:
+                logger.debug("Structured output failed, falling back to regex")
+                response = await _ainvoke_with_retry(classification_messages)
+                response_text = str(response.content) if hasattr(response, "content") else str(response)
+                goto, reasoning = _parse_routing_response(response_text)
+        else:
+            response = await _ainvoke_with_retry(classification_messages)
+            response_text = str(response.content) if hasattr(response, "content") else str(response)
+            goto, reasoning = _parse_routing_response(response_text)
 
-        goto, reasoning = _parse_routing_response(response_text)
+        logger.info("Routing: → %s (reason: %s)", goto, reasoning[:80])
 
         return Command(
             goto=goto,

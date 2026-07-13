@@ -11,21 +11,7 @@ from typing import Annotated
 from langchain_core.tools import tool
 
 from src.config import get_config
-from src.db.connection import DatabaseManager
-
-
-_db: DatabaseManager | None = None
-
-
-def set_db(db: DatabaseManager) -> None:
-    global _db
-    _db = db
-
-
-def _get_db() -> DatabaseManager:
-    if _db is None:
-        raise RuntimeError("Database not initialized. Call set_db() first.")
-    return _db
+from src.db.registry import get_db
 
 
 async def _simulate_api_call() -> bool:
@@ -49,7 +35,7 @@ async def track_shipment(tracking_number: Annotated[str, "Carrier tracking numbe
     Simulates querying FedEx/UPS/USPS tracking API.
     Returns current location, status, and estimated delivery.
     """
-    db = _get_db()
+    db = get_db()
     if not await _simulate_api_call():
         return json.dumps({"error": "Carrier API temporarily unavailable. Please try again."})
 
@@ -73,7 +59,7 @@ async def query_shipment_by_order(order_id: Annotated[str, "The order ID, e.g. '
 
     Returns carrier, tracking number, status, and location details.
     """
-    db = _get_db()
+    db = get_db()
     row = await db.fetch_one(
         "SELECT * FROM shipments WHERE order_id = ?", (order_id,)
     )
@@ -88,7 +74,7 @@ async def estimate_delivery(order_id: Annotated[str, "The order ID, e.g. 'ORD-00
 
     Simulates querying the carrier's delivery prediction API.
     """
-    db = _get_db()
+    db = get_db()
     if not await _simulate_api_call():
         return json.dumps({"error": "Delivery estimation service unavailable. Please try again."})
 
@@ -116,7 +102,7 @@ async def report_lost_package(tracking_number: Annotated[str, "Tracking number o
     This should be used when a package has shown no tracking updates
     for an extended period.
     """
-    db = _get_db()
+    db = get_db()
     row = await db.fetch_one(
         "SELECT id, order_id, status, carrier FROM shipments WHERE tracking_number = ?",
         (tracking_number,),

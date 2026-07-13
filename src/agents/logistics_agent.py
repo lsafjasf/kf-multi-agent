@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.tools import BaseTool
-from langgraph.prebuilt import create_react_agent
 from langgraph.graph.state import CompiledStateGraph
 
 from src.db.connection import DatabaseManager
@@ -13,9 +11,8 @@ from src.tools.logistics_tools import (
     query_shipment_by_order,
     report_lost_package,
     track_shipment,
-    set_db as logistics_set_db,
 )
-from src.tools.handoff import build_handoff_tools_for
+from src.agents import build_specialist_agent
 
 LOGISTICS_SYSTEM_PROMPT = """\
 You are the LOGISTICS SPECIALIST for ShopFast, a large e-commerce platform.
@@ -65,20 +62,10 @@ async def build_logistics_agent(
 
     The agent can track shipments (mock API) and hand off to order/refund/human.
     """
-    logistics_set_db(db)
-
-    domain_tools: list[BaseTool] = [
-        track_shipment,
-        query_shipment_by_order,
-        estimate_delivery,
-        report_lost_package,
-    ]
-
-    handoff_tools = build_handoff_tools_for("logistics_agent")
-
-    return create_react_agent(
+    return await build_specialist_agent(
         model=model,
-        tools=domain_tools + handoff_tools,
-        prompt=LOGISTICS_SYSTEM_PROMPT,
-        name="logistics_agent",
+        db=db,
+        agent_name="logistics_agent",
+        system_prompt=LOGISTICS_SYSTEM_PROMPT,
+        domain_tools=[track_shipment, query_shipment_by_order, estimate_delivery, report_lost_package],
     )

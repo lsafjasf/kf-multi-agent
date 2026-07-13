@@ -14,21 +14,7 @@ from typing import Annotated
 
 from langchain_core.tools import tool
 
-from src.db.connection import DatabaseManager
-
-
-_db: DatabaseManager | None = None
-
-
-def set_db(db: DatabaseManager) -> None:
-    global _db
-    _db = db
-
-
-def _get_db() -> DatabaseManager:
-    if _db is None:
-        raise RuntimeError("Database not initialized. Call set_db() first.")
-    return _db
+from src.db.registry import get_db
 
 
 @tool
@@ -41,7 +27,7 @@ async def check_refund_eligibility(order_id: Annotated[str, "The order ID to che
       not already refunded.
     - Orders already 'cancelled' or 'refunded': not eligible.
     """
-    db = _get_db()
+    db = get_db()
     row = await db.fetch_one(
         "SELECT id, customer_id, status, total_amount, delivered_at FROM orders WHERE id = ?",
         (order_id,),
@@ -120,7 +106,7 @@ async def process_refund(
     IMPORTANT: Always call check_refund_eligibility BEFORE this tool
     to confirm the order can be refunded.
     """
-    db = _get_db()
+    db = get_db()
 
     # Small delay to simulate financial system processing
     await asyncio.sleep(random.uniform(0.5, 1.0))
@@ -166,7 +152,7 @@ async def query_refund_status(refund_id: Annotated[str, "The refund ID, e.g. 'RE
     Returns the current status (pending/approved/rejected/processed),
     amount, reason, and processing timeline.
     """
-    db = _get_db()
+    db = get_db()
     row = await db.fetch_one(
         "SELECT * FROM refunds WHERE id = ?", (refund_id,)
     )

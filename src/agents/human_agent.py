@@ -11,15 +11,8 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import AIMessage
 
-from src.db.connection import DatabaseManager
+from src.db.registry import get_db
 from src.state import CustomerServiceState
-
-_db: DatabaseManager | None = None
-
-
-def set_db(db: DatabaseManager) -> None:
-    global _db
-    _db = db
 
 
 async def human_agent_node(state: CustomerServiceState) -> dict:
@@ -29,7 +22,9 @@ async def human_agent_node(state: CustomerServiceState) -> dict:
     from state. Generates a ticket, writes it to SQLite, and returns a
     final response message.
     """
-    if _db is None:
+    try:
+        db = get_db()
+    except RuntimeError:
         return {
             "messages": [
                 AIMessage(
@@ -53,7 +48,7 @@ async def human_agent_node(state: CustomerServiceState) -> dict:
         "escalation_reason": state.escalation_reason,
     })
 
-    await _db.execute(
+    await db.execute(
         """INSERT INTO support_tickets
            (id, customer_id, order_id, issue_summary, escalation_reason, agent_trace, status, created_at)
            VALUES (?, ?, ?, ?, ?, ?, 'open', ?)""",
@@ -67,7 +62,7 @@ async def human_agent_node(state: CustomerServiceState) -> dict:
             now,
         ),
     )
-    await _db.commit()
+    await db.commit()
 
     message = (
         f"📋 **Support Ticket Created**\n\n"

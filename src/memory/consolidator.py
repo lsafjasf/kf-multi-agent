@@ -12,19 +12,23 @@ specialist sub-agents).  It handles:
 from __future__ import annotations
 
 import json
+import re
 import time
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage, HumanMessage
 
+from src.logging import get_logger
+from src.retry import with_retries
 from src.memory.session_store import SessionStore
 from src.memory.profile_store import ProfileStore
 from src.db.connection import DatabaseManager
 
 if TYPE_CHECKING:
     from src.state import CustomerServiceState
+
+logger = get_logger("memory")
 
 
 # ── LLM Prompts ────────────────────────────────────────────────────────
@@ -103,6 +107,9 @@ class MemoryConsolidator:
         self.profile_store = profile_store
         self.db = db
 
+        # Retry-wrapped version of model.ainvoke
+        self._ainvoke = with_retries(max_attempts=3)(model.ainvoke)
+
     # ── L2a: Running summary (in-state, rule-based) ─────────────────
     async def update_running_summary(self, state: "CustomerServiceState") -> str:
         """Accumulate a short running summary of the current session.
@@ -154,6 +161,8 @@ class MemoryConsolidator:
                 "memory_context": "",
             }
 
+        logger.debug("Consolidating session %s for user %s", session_id, user_id)
+
         # ── 1. Generate and persist L2b summary ──────────────────
         l2b_result = await self._generate_session_summary(state)
         if l2b_result:
@@ -178,6 +187,7 @@ class MemoryConsolidator:
                 message_count=msg_count,
                 duration_ms=duration_ms,
             )
+            logger.info("L2b saved: session=%s resolution=%s", session_id, resolution)
 
         # ── 2. Update L3 profile ─────────────────────────────────
         await self._update_user_profile(user_id, l2b_result)
@@ -189,7 +199,9 @@ class MemoryConsolidator:
         )
 
         # ── 3. Archive old sessions ──────────────────────────────
-        await self.session_store.archive_old_sessions(user_id)
+        archived = await self.session_store.archive_old_sessions(user_id)
+        if archived:
+            logger.debug("Archived %d old sessions for user %s", archived, user_id)
 
         return {
             "running_summary": "",
@@ -213,13 +225,15 @@ class MemoryConsolidator:
             return None
 
         try:
-            response = await self.model.ainvoke([
+            # Use retry-wrapped invoke
+            response = await self._ainvoke([
                 SystemMessage(content=SESSION_SUMMARY_PROMPT),
                 HumanMessage(content=f"Conversation transcript:\n\n{transcript}"),
             ])
             text = str(response.content) if hasattr(response, "content") else str(response)
             return self._parse_json_response(text)
         except Exception:
+            logger.exception("Failed to generate session summary")
             return None
 
     async def _update_user_profile(
@@ -234,7 +248,7 @@ class MemoryConsolidator:
         new_summary_text = session_summary.get("summary", "")
 
         try:
-            response = await self.model.ainvoke([
+            response = await self._ainvoke([
                 SystemMessage(content=PROFILE_UPDATE_PROMPT),
                 HumanMessage(content=(
                     f"Existing profile:\n{existing_json}\n\n"
@@ -252,8 +266,9 @@ class MemoryConsolidator:
                         "sentiment_trend": updates.get("sentiment_trend", "neutral"),
                     },
                 )
+                logger.debug("L3 profile updated for user %s", user_id)
         except Exception:
-            pass  # Profile update is best-effort; don't break the flow
+            logger.debug("Profile update skipped (best-effort)")
 
     # ── Context builder (for Supervisor injection) ──────────────────
     async def build_memory_context(self, user_id: str) -> str:
@@ -284,7 +299,6 @@ class MemoryConsolidator:
     @staticmethod
     def _parse_json_response(text: str) -> dict | None:
         """Extract a JSON object from an LLM response text."""
-        import re
         # Try to find a JSON object in the response
         match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
         if not match:

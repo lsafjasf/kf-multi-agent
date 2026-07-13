@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.tools import BaseTool
-from langgraph.prebuilt import create_react_agent
 from langgraph.graph.state import CompiledStateGraph
 
 from src.db.connection import DatabaseManager
@@ -12,9 +10,8 @@ from src.tools.order_tools import (
     cancel_order,
     query_order_by_id,
     query_orders_by_user,
-    set_db as order_set_db,
 )
-from src.tools.handoff import build_handoff_tools_for
+from src.agents import build_specialist_agent
 
 ORDER_SYSTEM_PROMPT = """\
 You are the ORDER SPECIALIST for ShopFast, a large e-commerce platform.
@@ -57,24 +54,10 @@ async def build_order_agent(
 
     The agent can query orders (SQLite) and hand off to logistics/refund/human.
     """
-    # Wire up the DB so order tools can use it
-    order_set_db(db)
-
-    # Domain tools
-    domain_tools: list[BaseTool] = [
-        query_order_by_id,
-        query_orders_by_user,
-        cancel_order,
-    ]
-
-    # Handoff tools: transfer to logistics, refund, and escalate
-    handoff_tools = build_handoff_tools_for("order_agent")
-
-    all_tools = domain_tools + handoff_tools
-
-    return create_react_agent(
+    return await build_specialist_agent(
         model=model,
-        tools=all_tools,
-        prompt=ORDER_SYSTEM_PROMPT,
-        name="order_agent",
+        db=db,
+        agent_name="order_agent",
+        system_prompt=ORDER_SYSTEM_PROMPT,
+        domain_tools=[query_order_by_id, query_orders_by_user, cancel_order],
     )

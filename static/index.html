@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShopFast 客服 — Multi-Agent</title>
+<style>
+  :root {
+    --bg: #f5f5f5;
+    --card: #fff;
+    --text: #1a1a1a;
+    --muted: #888;
+    --border: #e0e0e0;
+    --primary: #2563eb;
+    --primary-light: #dbeafe;
+    --accent-order: #059669;
+    --accent-logistics: #d97706;
+    --accent-refund: #7c3aed;
+    --accent-human: #dc2626;
+    --accent-supervisor: #6b7280;
+    --radius: 10px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ────────────────────────────── */
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  header .logo { font-size: 20px; }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-weight: 500;
+  }
+
+  /* ── Chat area ─────────────────────────── */
+  #chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* ── Messages ──────────────────────────── */
+  .msg {
+    max-width: 85%;
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    line-height: 1.55;
+    font-size: 14px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } }
+
+  .msg.user {
+    align-self: flex-end;
+    background: var(--primary);
+    color: #fff;
+    border-bottom-right-radius: 2px;
+  }
+
+  .msg.agent {
+    align-self: flex-start;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 2px;
+  }
+
+  /* ── System events ─────────────────────── */
+  .event {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    padding: 0 4px;
+  }
+  .event .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot.route-order { background: var(--accent-order); }
+  .dot.route-logistics { background: var(--accent-logistics); }
+  .dot.route-refund { background: var(--accent-refund); }
+  .dot.route-human { background: var(--accent-human); }
+  .dot.route-supervisor { background: var(--accent-supervisor); }
+
+  .agent-tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 99px;
+    margin-right: 4px;
+  }
+  .tag-order { background: #d1fae5; color: var(--accent-order); }
+  .tag-logistics { background: #fef3c7; color: var(--accent-logistics); }
+  .tag-refund { background: #ede9fe; color: var(--accent-refund); }
+  .tag-human { background: #fee2e2; color: var(--accent-human); }
+  .tag-supervisor { background: #f3f4f6; color: var(--accent-supervisor); }
+
+  .tool-event {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'SF Mono', 'Cascadia Code', monospace;
+    padding: 1px 0;
+  }
+
+  /* ── Input area ────────────────────────── */
+  footer {
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  footer input {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  footer input:focus { border-color: var(--primary); }
+  footer button {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  footer button:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── User selector ─────────────────────── */
+  .user-select {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .user-select select {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    background: var(--bg);
+  }
+
+  /* ── Ticket indicator ──────────────────── */
+  .ticket-badge {
+    display: inline-block;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 99px;
+    background: #fee2e2;
+    color: var(--accent-human);
+    font-weight: 600;
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">🏪</span>
+  <h1>ShopFast 客服</h1>
+  <span class="badge">Multi-Agent</span>
+  <span style="flex:1"></span>
+  <div class="user-select">
+    用户
+    <select id="userId">
+      <option value="CUST-001">Alice (CUST-001)</option>
+      <option value="CUST-002">Bob (CUST-002)</option>
+      <option value="CUST-003">Carol (CUST-003)</option>
+      <option value="CUST-004">David (CUST-004)</option>
+    </select>
+  </div>
+</header>
+
+<div id="chat">
+  <div class="msg agent">
+    👋 你好！我是 ShopFast 智能客服。<br>
+    可以帮你查订单、追踪物流、处理退款。有什么需要？
+  </div>
+</div>
+
+<footer>
+  <input id="input" type="text" placeholder="输入你的问题..." autofocus
+    onkeydown="if(event.key==='Enter')send()">
+  <button id="sendBtn" onclick="send()">发送</button>
+</footer>
+
+<script>
+const chat = document.getElementById('chat');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('sendBtn');
+const userIdEl = document.getElementById('userId');
+
+let sessionId = 'web-' + crypto.randomUUID().slice(0, 12);
+let sending = false;
+
+const AGENT_LABELS = {
+  supervisor:      { tag: '路由',  cls: 'tag-supervisor',  dot: 'route-supervisor' },
+  order_agent:     { tag: '订单',  cls: 'tag-order',       dot: 'route-order' },
+  logistics_agent: { tag: '物流',  cls: 'tag-logistics',   dot: 'route-logistics' },
+  refund_agent:    { tag: '退款',  cls: 'tag-refund',      dot: 'route-refund' },
+  human_agent:     { tag: '人工',  cls: 'tag-human',       dot: 'route-human' },
+};
+
+function scrollDown() {
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function addMsg(role, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  chat.appendChild(div);
+  scrollDown();
+}
+
+function addEvent(html) {
+  const div = document.createElement('div');
+  div.className = 'event';
+  div.innerHTML = html;
+  chat.appendChild(div);
+  scrollDown();
+}
+
+function addRoute(agentName) {
+  const info = AGENT_LABELS[agentName];
+  if (!info) return;
+  addEvent(
+    `<span class="dot ${info.dot}"></span>
+     <span class="agent-tag ${info.cls}">${info.tag}</span>
+     已接入`
+  );
+}
+
+function addTool(name, args) {
+  addEvent(`<span class="tool-event">🔧 ${name}(${args})</span>`);
+}
+
+function addTicket(ticketId) {
+  const div = document.createElement('div');
+  div.className = 'msg agent';
+  div.innerHTML = `<span class="ticket-badge">📋 工单 ${ticketId}</span>`;
+  chat.appendChild(div);
+  scrollDown();
+}
+
+async function send() {
+  const msg = input.value.trim();
+  if (!msg || sending) return;
+  input.value = '';
+  sending = true;
+  sendBtn.disabled = true;
+
+  addMsg('user', msg);
+
+  try {
+    const resp = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: msg,
+        user_id: userIdEl.value,
+        session_id: sessionId,
+      }),
+    });
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      let eventType = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          try {
+            const obj = JSON.parse(data);
+            handleSSE(eventType, obj);
+          } catch {
+            // non-JSON data — skip
+          }
+        }
+      }
+    }
+  } catch (err) {
+    addMsg('agent', '⚠️ 网络错误: ' + err.message);
+  } finally {
+    sending = false;
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+
+function handleSSE(event, data) {
+  switch (event) {
+    case 'route':
+      addRoute(data.agent);
+      break;
+    case 'tool':
+      addTool(data.name, data.args);
+      break;
+    case 'handoff':
+      addEvent(`<span style="font-size:11px;color:var(--muted)">↪ ${data.content}</span>`);
+      break;
+    case 'done':
+      if (data.message) addMsg('agent', data.message);
+      if (data.ticket_id) addTicket(data.ticket_id);
+      break;
+    case 'error':
+      addMsg('agent', '⚠️ 系统错误: ' + data);
+      break;
+  }
+}
+</script>
+
+</body>
+</html>

@@ -7,23 +7,7 @@ from typing import Annotated
 
 from langchain_core.tools import tool
 
-from src.db.connection import DatabaseManager
-
-
-# Module-level db reference — set by the factory on graph construction.
-_db: DatabaseManager | None = None
-
-
-def set_db(db: DatabaseManager) -> None:
-    """Set the module-level database manager. Called at graph build time."""
-    global _db
-    _db = db
-
-
-def _get_db() -> DatabaseManager:
-    if _db is None:
-        raise RuntimeError("Database not initialized. Call set_db() first.")
-    return _db
+from src.db.registry import get_db
 
 
 @tool
@@ -33,7 +17,7 @@ async def query_order_by_id(order_id: Annotated[str, "The order ID, e.g. 'ORD-00
     Returns full order details including status, items, total amount,
     shipping address, and dates.
     """
-    db = _get_db()
+    db = get_db()
     row = await db.fetch_one(
         """SELECT o.*, c.name AS customer_name, c.email AS customer_email
            FROM orders o JOIN customers c ON o.customer_id = c.id
@@ -60,7 +44,7 @@ async def query_orders_by_user(user_id: Annotated[str, "The customer ID, e.g. 'C
     Returns a list of orders with basic info (id, status, total, date).
     Use this to help a customer see their order history.
     """
-    db = _get_db()
+    db = get_db()
     rows = await db.fetch_all(
         """SELECT id, status, total_amount, currency, created_at
            FROM orders WHERE customer_id = ?
@@ -77,7 +61,7 @@ async def cancel_order(order_id: Annotated[str, "The order ID to cancel, e.g. 'O
     Only orders in 'pending' status can be cancelled. Once an order is
     confirmed or shipped, cancellation is not possible — suggest a refund.
     """
-    db = _get_db()
+    db = get_db()
     row = await db.fetch_one(
         "SELECT id, status, total_amount FROM orders WHERE id = ?",
         (order_id,),

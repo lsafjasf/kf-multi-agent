@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.tools import BaseTool
-from langgraph.prebuilt import create_react_agent
 from langgraph.graph.state import CompiledStateGraph
 
 from src.db.connection import DatabaseManager
@@ -12,9 +10,8 @@ from src.tools.refund_tools import (
     check_refund_eligibility,
     process_refund,
     query_refund_status,
-    set_db as refund_set_db,
 )
-from src.tools.handoff import build_handoff_tools_for
+from src.agents import build_specialist_agent
 
 REFUND_SYSTEM_PROMPT = """\
 You are the REFUND SPECIALIST for ShopFast, a large e-commerce platform.
@@ -66,19 +63,10 @@ async def build_refund_agent(
     The agent can check eligibility, process refunds (mock financial system),
     and hand off to order/logistics/human.
     """
-    refund_set_db(db)
-
-    domain_tools: list[BaseTool] = [
-        check_refund_eligibility,
-        process_refund,
-        query_refund_status,
-    ]
-
-    handoff_tools = build_handoff_tools_for("refund_agent")
-
-    return create_react_agent(
+    return await build_specialist_agent(
         model=model,
-        tools=domain_tools + handoff_tools,
-        prompt=REFUND_SYSTEM_PROMPT,
-        name="refund_agent",
+        db=db,
+        agent_name="refund_agent",
+        system_prompt=REFUND_SYSTEM_PROMPT,
+        domain_tools=[check_refund_eligibility, process_refund, query_refund_status],
     )

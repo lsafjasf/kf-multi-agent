@@ -10,6 +10,9 @@ from langchain_core.messages import HumanMessage
 
 from src.db.connection import DatabaseManager
 from src.eval.scenarios import EvalScenario
+from src.logging import get_logger
+
+logger = get_logger("eval")
 
 
 @dataclass
@@ -229,12 +232,12 @@ class EvalRunner:
         """Run a list of scenarios sequentially and return results."""
         results = []
         for i, scenario in enumerate(scenarios):
-            print(f"  [{i+1}/{len(scenarios)}] {scenario.id} ...", end=" ", flush=True)
+            logger.info("[%d/%d] %s ...", i + 1, len(scenarios), scenario.id)
             result = await self.run_scenario(scenario)
-            status = "✓ PASS" if result.passed else "✗ FAIL"
+            status = "PASS" if result.passed else "FAIL"
             if result.error:
-                status = "✗ ERROR"
-            print(f"{status}  ({result.duration_ms:.0f}ms)")
+                status = "ERROR"
+            logger.info("[%d/%d] %s — %s (%.0fms)", i + 1, len(scenarios), scenario.id, status, result.duration_ms)
             results.append(result)
         return results
 

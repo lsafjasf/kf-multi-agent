@@ -13,6 +13,9 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from src.eval.runner import EvalResult
+from src.logging import get_logger
+
+logger = get_logger("judge")
 
 
 JUDGE_SYSTEM_PROMPT = """\
@@ -105,10 +108,10 @@ class Judge:
     async def evaluate_all(self, results: list[EvalResult]) -> list[EvalResult]:
         """Score all results. Returns the same list (mutated in-place)."""
         for i, result in enumerate(results):
-            print(f"  [judge] {result.scenario_id} ...", end=" ", flush=True)
+            logger.info("[judge] %s ...", result.scenario_id)
             await self.evaluate(result)
             overall = result.judge_scores.get("overall", "?") if result.judge_scores else "?"
-            print(f"overall={overall}")
+            logger.info("[judge] %s overall=%s", result.scenario_id, overall)
         return results
 
     # ── Helpers ─────────────────────────────────────────────────────
